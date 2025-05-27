@@ -27,6 +27,7 @@ export default function Home() {
     setAudioInfo(null);
 
     try {
+      console.log('Submitting URL:', url);
       const response = await fetch('/api/download', {
         method: 'POST',
         headers: {
@@ -36,6 +37,7 @@ export default function Home() {
       });
 
       const data = await response.json();
+      console.log('Response:', data);
 
       if (!response.ok) {
         throw new Error(data.error || data.details || 'Failed to fetch audio info');
@@ -43,6 +45,7 @@ export default function Home() {
 
       setAudioInfo(data);
     } catch (err) {
+      console.error('Error:', err);
       setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
       setLoading(false);
@@ -54,6 +57,7 @@ export default function Home() {
       setDownloading(formatId);
       setError('');
 
+      console.log('Downloading format:', formatId);
       const response = await fetch(`/api/download?url=${encodeURIComponent(url)}&itag=${formatId}`);
       
       if (!response.ok) {
@@ -84,6 +88,7 @@ export default function Home() {
       document.body.removeChild(link);
       window.URL.revokeObjectURL(downloadUrl);
     } catch (err) {
+      console.error('Error:', err);
       setError(err instanceof Error ? err.message : 'Failed to download audio');
     } finally {
       setDownloading(null);

@@ -33,10 +33,13 @@ export default async function handler(
         return res.status(400).json({ error: 'Invalid YouTube URL' });
       }
 
+      console.log('Fetching video info for:', videoId);
+
       // Get video info from RapidAPI
       const response = await fetch(
-        `https://${RAPID_API_HOST}/url?url=${encodeURIComponent(url)}`,
+        `https://${RAPID_API_HOST}/id?id=${videoId}`,
         {
+          method: 'GET',
           headers: {
             'X-RapidAPI-Key': RAPID_API_KEY || '',
             'X-RapidAPI-Host': RAPID_API_HOST
@@ -45,11 +48,22 @@ export default async function handler(
       );
 
       if (!response.ok) {
-        throw new Error('Failed to fetch video info');
+        const errorData = await response.json().catch(() => null);
+        console.error('API Error:', {
+          status: response.status,
+          statusText: response.statusText,
+          error: errorData
+        });
+        throw new Error(`API Error: ${response.status} ${response.statusText}`);
       }
 
       const data = await response.json();
+      console.log('API Response:', data);
       
+      if (!data || !data.title) {
+        throw new Error('Invalid response from API');
+      }
+
       // Format the response
       const formats = [
         {
@@ -77,7 +91,7 @@ export default async function handler(
         formats,
       });
     } catch (error) {
-      console.error('Error:', error);
+      console.error('Error details:', error);
       res.status(500).json({ 
         error: 'Failed to process video',
         details: error instanceof Error ? error.message : 'Unknown error'
@@ -91,10 +105,18 @@ export default async function handler(
         return res.status(400).json({ error: 'URL and itag are required' });
       }
 
+      const videoId = extractVideoId(url as string);
+      if (!videoId) {
+        return res.status(400).json({ error: 'Invalid YouTube URL' });
+      }
+
+      console.log('Getting download link for:', videoId);
+
       // Get download link from RapidAPI
       const response = await fetch(
-        `https://${RAPID_API_HOST}/url?url=${encodeURIComponent(url as string)}`,
+        `https://${RAPID_API_HOST}/id?id=${videoId}`,
         {
+          method: 'GET',
           headers: {
             'X-RapidAPI-Key': RAPID_API_KEY || '',
             'X-RapidAPI-Host': RAPID_API_HOST
@@ -103,15 +125,26 @@ export default async function handler(
       );
 
       if (!response.ok) {
-        throw new Error('Failed to get download link');
+        const errorData = await response.json().catch(() => null);
+        console.error('API Error:', {
+          status: response.status,
+          statusText: response.statusText,
+          error: errorData
+        });
+        throw new Error(`API Error: ${response.status} ${response.statusText}`);
       }
 
       const data = await response.json();
+      console.log('Download link response:', data);
+
+      if (!data || !data.link) {
+        throw new Error('Invalid response from API');
+      }
 
       // Redirect to the download URL
       res.redirect(data.link);
     } catch (error) {
-      console.error('Error:', error);
+      console.error('Error details:', error);
       res.status(500).json({ 
         error: 'Failed to download audio',
         details: error instanceof Error ? error.message : 'Unknown error'

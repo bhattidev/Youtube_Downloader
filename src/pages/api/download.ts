@@ -1,21 +1,19 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import youtubeDl from 'youtube-dl-exec';
-import { sanitizeFilename } from '@/utils/sanitize';
 
 interface AudioFormat {
   format_id: string;
   ext: string;
-  acodec: string;
-  vcodec: string;
-  abr?: number; // Audio bitrate
-  filesize?: number;
-  format_note?: string;
+  quality: string;
+  size: string;
 }
 
 interface VideoInfo {
   title: string;
   formats: AudioFormat[];
 }
+
+const RAPID_API_KEY = process.env.RAPID_API_KEY;
+const RAPID_API_HOST = 'youtube-mp36.p.rapidapi.com';
 
 export default async function handler(
   req: NextApiRequest,
@@ -29,32 +27,53 @@ export default async function handler(
         return res.status(400).json({ error: 'URL is required' });
       }
 
-      // Get video info
-      const info = await youtubeDl(url, {
-        dumpSingleJson: true,
-        noWarnings: true,
-        callHome: false,
-      }) as VideoInfo;
+      // Extract video ID from URL
+      const videoId = extractVideoId(url);
+      if (!videoId) {
+        return res.status(400).json({ error: 'Invalid YouTube URL' });
+      }
 
-      // Filter for audio-only formats and sort by quality
-      const formats = info.formats
-        .filter(format => format.acodec !== 'none' && format.vcodec === 'none')
-        .map(format => ({
-          itag: format.format_id,
-          quality: format.abr ? `${format.abr}kbps` : format.format_note || 'Unknown',
-          mimeType: format.ext,
-          size: format.filesize ? `${(format.filesize / 1024 / 1024).toFixed(1)}MB` : 'Unknown',
-          container: format.ext,
-        }))
-        .sort((a, b) => {
-          const aBitrate = parseInt(a.quality) || 0;
-          const bBitrate = parseInt(b.quality) || 0;
-          return bBitrate - aBitrate;
-        });
+      // Get video info from RapidAPI
+      const response = await fetch(
+        `https://${RAPID_API_HOST}/url?url=${encodeURIComponent(url)}`,
+        {
+          headers: {
+            'X-RapidAPI-Key': RAPID_API_KEY || '',
+            'X-RapidAPI-Host': RAPID_API_HOST
+          }
+        }
+      );
 
-      res.setHeader('Content-Type', 'application/json');
+      if (!response.ok) {
+        throw new Error('Failed to fetch video info');
+      }
+
+      const data = await response.json();
+      
+      // Format the response
+      const formats = [
+        {
+          format_id: 'mp3_128',
+          ext: 'mp3',
+          quality: '128kbps',
+          size: '~5MB'
+        },
+        {
+          format_id: 'mp3_192',
+          ext: 'mp3',
+          quality: '192kbps',
+          size: '~7MB'
+        },
+        {
+          format_id: 'mp3_320',
+          ext: 'mp3',
+          quality: '320kbps',
+          size: '~10MB'
+        }
+      ];
+
       res.status(200).json({
-        title: info.title,
+        title: data.title,
         formats,
       });
     } catch (error) {
@@ -72,42 +91,39 @@ export default async function handler(
         return res.status(400).json({ error: 'URL and itag are required' });
       }
 
-      // Get video info first to get the title
-      const info = await youtubeDl(url as string, {
-        dumpSingleJson: true,
-        noWarnings: true,
-        callHome: false,
-      }) as VideoInfo;
+      // Get download link from RapidAPI
+      const response = await fetch(
+        `https://${RAPID_API_HOST}/url?url=${encodeURIComponent(url as string)}`,
+        {
+          headers: {
+            'X-RapidAPI-Key': RAPID_API_KEY || '',
+            'X-RapidAPI-Host': RAPID_API_HOST
+          }
+        }
+      );
 
-      // Set response headers
-      res.setHeader('Content-Type', 'audio/mpeg');
-      const safeTitle = sanitizeFilename(info.title);
-      const filename = encodeURIComponent(safeTitle);
-      res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${filename}.mp3`);
+      if (!response.ok) {
+        throw new Error('Failed to get download link');
+      }
 
-      // Download the audio
-      const audio = await youtubeDl(url as string, {
-        format: itag as string,
-        extractAudio: true,
-        audioFormat: 'mp3',
-        audioQuality: 0, // Best quality
-        output: '-', // Output to stdout
-        noWarnings: true,
-        callHome: false,
-      });
+      const data = await response.json();
 
-      // Send the audio data
-      res.send(audio);
+      // Redirect to the download URL
+      res.redirect(data.link);
     } catch (error) {
       console.error('Error:', error);
-      if (!res.headersSent) {
-        res.status(500).json({ 
-          error: 'Failed to download audio',
-          details: error instanceof Error ? error.message : 'Unknown error'
-        });
-      }
+      res.status(500).json({ 
+        error: 'Failed to download audio',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      });
     }
   } else {
     res.status(405).json({ error: 'Method not allowed' });
   }
+}
+
+function extractVideoId(url: string): string | null {
+  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+  const match = url.match(regExp);
+  return (match && match[2].length === 11) ? match[2] : null;
 } 

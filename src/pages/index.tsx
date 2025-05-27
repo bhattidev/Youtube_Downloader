@@ -2,11 +2,10 @@ import { useState } from 'react';
 import Head from 'next/head';
 
 interface AudioFormat {
-  itag: string;
+  format_id: string;
+  ext: string;
   quality: string;
-  mimeType: string;
   size: string;
-  container: string;
 }
 
 interface AudioInfo {
@@ -19,6 +18,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [audioInfo, setAudioInfo] = useState<AudioInfo | null>(null);
+  const [downloading, setDownloading] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -49,14 +49,23 @@ export default function Home() {
     }
   };
 
-  const handleDownload = async (itag: string) => {
+  const handleDownload = async (formatId: string) => {
     try {
-      const response = await fetch(`/api/download?url=${encodeURIComponent(url)}&itag=${itag}`);
+      setDownloading(formatId);
+      setError('');
+
+      const response = await fetch(`/api/download?url=${encodeURIComponent(url)}&itag=${formatId}`);
       
       if (!response.ok) {
         const error = await response.json();
         throw new Error(error.error || error.details || 'Failed to download audio');
       }
+
+      // Get the filename from the Content-Disposition header
+      const contentDisposition = response.headers.get('Content-Disposition');
+      const filename = contentDisposition
+        ? contentDisposition.split('filename=')[1].replace(/"/g, '')
+        : 'audio.mp3';
 
       // Create a blob from the response
       const blob = await response.blob();
@@ -65,7 +74,7 @@ export default function Home() {
       const downloadUrl = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = downloadUrl;
-      link.download = `${audioInfo?.title || 'audio'}.mp3`;
+      link.download = filename;
       
       // Trigger the download
       document.body.appendChild(link);
@@ -76,6 +85,8 @@ export default function Home() {
       window.URL.revokeObjectURL(downloadUrl);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to download audio');
+    } finally {
+      setDownloading(null);
     }
   };
 
@@ -121,15 +132,16 @@ export default function Home() {
             <h2 className="text-2xl font-semibold mb-6 text-white">{audioInfo.title}</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {audioInfo.formats.map((format) => (
-                <div key={format.itag} className="bg-gray-700 p-4 rounded-lg space-y-2">
+                <div key={format.format_id} className="bg-gray-700 p-4 rounded-lg space-y-2">
                   <p className="text-gray-300">Quality: {format.quality}</p>
                   <p className="text-gray-300">Size: {format.size}</p>
-                  <p className="text-gray-300">Format: {format.container.toUpperCase()}</p>
+                  <p className="text-gray-300">Format: {format.ext.toUpperCase()}</p>
                   <button
-                    onClick={() => handleDownload(format.itag)}
-                    className="w-full mt-4 px-4 py-2 bg-youtube-red text-white text-center rounded hover:bg-youtube-red-hover transition-colors"
+                    onClick={() => handleDownload(format.format_id)}
+                    disabled={downloading === format.format_id}
+                    className="w-full mt-4 px-4 py-2 bg-youtube-red text-white text-center rounded hover:bg-youtube-red-hover transition-colors disabled:bg-gray-600 disabled:cursor-not-allowed"
                   >
-                    Download MP3
+                    {downloading === format.format_id ? 'Downloading...' : 'Download MP3'}
                   </button>
                 </div>
               ))}

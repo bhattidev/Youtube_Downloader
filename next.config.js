@@ -2,9 +2,12 @@
 const nextConfig = {
   reactStrictMode: true,
   swcMinify: true,
-  // Add configuration for serverless functions
-  experimental: {
-    serverComponentsExternalPackages: ['youtube-dl-exec', 'yt-dlp-wrap', 'ytdl-core']
+  // Configure API routes
+  api: {
+    responseLimit: '50mb',
+    bodyParser: {
+      sizeLimit: '50mb',
+    },
   },
   // Configure output for Vercel
   output: 'standalone',
